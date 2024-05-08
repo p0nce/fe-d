@@ -1,0 +1,7 @@
+{
+	"name": "fe-d",
+	"description": "A translation of the fe language by rxi, used in cel7",
+	"authors": ["rxi"],
+	"license": "MIT",
+	"targetType": "executable"
+}
