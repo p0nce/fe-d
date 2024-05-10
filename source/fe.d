@@ -30,7 +30,8 @@ public:
     Example:
         int size = 1024 * 1024;
         void* data = malloc(size);
-        fe_Context* ctx = fe_open(data, size);
+        void* udata = null; // optional user data
+        fe_Context* ctx = fe_open(data, size, udata);
         // ...
         fe_close(ctx);
         free(data);
@@ -151,6 +152,54 @@ fe_Number fe_tonumber(fe_Context *ctx, fe_Object *obj)
 {
     return number(checktype(ctx, obj, FE_TNUMBER));
 }
+///ditto
+alias fe_cfunc = fe_cfunc_impl;
+///ditto
+alias fe_list = fe_list_impl;
+
+
+/// Types in fe language
+enum 
+{
+    FE_TPAIR,  ///
+    FE_TFREE,  ///
+    FE_TNIL,   ///
+    FE_TNUMBER,///
+    FE_TSYMBOL,///
+    FE_TSTRING,///
+    FE_TFUNC,  ///
+    FE_TMACRO, ///
+    FE_TPRIM,  ///
+    FE_TCFUNC, ///
+    FE_TPTR    ///
+}
+
+/// Get type of a fe value.
+int fe_type(fe_Context *ctx, fe_Object *obj) 
+{
+    return type(obj);
+}
+
+// To document:
+alias fe_nextarg = fe_nextarg_impl;
+alias fe_error = fe_error_impl;
+alias fe_tostring = fe_tostring_impl;
+alias fe_car = fe_car_impl;
+alias fe_cdr = fe_cdr_impl;
+
+
+/// Get user data pointer.
+void* fe_userdata(fe_Context* ctx)
+{
+    return ctx.udata;
+}
+
+/// Set value in environment.
+void fe_set(fe_Context *ctx, fe_Object *sym, fe_Object *v) 
+{
+    cdr(getbound(sym, &nil)) = v;
+}
+
 
 // Not technically in public API, but we need to expose them as pointers.
 
@@ -171,6 +220,9 @@ struct fe_Context
     fe_Object* symlist;
     fe_Object* t;
     int nextchr;
+
+    // Addition: user data pointer, if you need to hold a larger interpreter object.
+    void* udata;
 }
 
 private:
@@ -179,22 +231,6 @@ enum FE_VERSION = "1.0";
 
 alias fe_Number = float;
 
-
-// Types in fe language
-enum 
-{
-    FE_TPAIR, 
-    FE_TFREE, 
-    FE_TNIL, 
-    FE_TNUMBER, 
-    FE_TSYMBOL, 
-    FE_TSTRING,
-    FE_TFUNC, 
-    FE_TMACRO, 
-    FE_TPRIM, 
-    FE_TCFUNC, 
-    FE_TPTR
-}
 
 static immutable string[] typenames = 
 [
@@ -295,7 +331,7 @@ fe_Object makeNil()
     return nil;
 }
 
-void fe_error(fe_Context *ctx, const char *msg) 
+void fe_error_impl(fe_Context *ctx, const char *msg) 
 {
     fe_Object *cl = ctx.calllist;
     /* reset context state */
@@ -306,14 +342,16 @@ void fe_error(fe_Context *ctx, const char *msg)
 }
 
 
-fe_Object* fe_nextarg(fe_Context *ctx, fe_Object **arg) {
-  fe_Object *a = *arg;
-  if (type(a) != FE_TPAIR) {
-    if (isnil(a)) { fe_error(ctx, "too few arguments"); }
-    fe_error(ctx, "dotted pair in argument list");
-  }
-  *arg = cdr(a);
-  return car(a);
+fe_Object* fe_nextarg_impl(fe_Context *ctx, fe_Object **arg) 
+{
+    fe_Object *a = *arg;
+    if (type(a) != FE_TPAIR) 
+    {
+        if (isnil(a)) { fe_error(ctx, "too few arguments"); }
+        fe_error(ctx, "dotted pair in argument list");
+    }
+    *arg = cdr(a);
+    return car(a);
 }
 
 
@@ -327,12 +365,6 @@ fe_Object* checktype(fe_Context *ctx, fe_Object *obj, int supposedtype)
     }
     return obj;
 }
-
-
-int fe_type(fe_Context *ctx, fe_Object *obj) {
-  return type(obj);
-}
-
 
 int fe_isnil(fe_Context *ctx, fe_Object *obj) {
   return isnil(obj);
@@ -493,8 +525,8 @@ fe_Object* fe_number_impl(fe_Context *ctx, fe_Number n) {
   return obj;
 }
 
-
-static fe_Object* buildstring(fe_Context *ctx, fe_Object *tail, int chr) {
+static fe_Object* buildstring(fe_Context *ctx, fe_Object *tail, int chr) 
+{
   if (!tail || strbuf(tail)[STRBUFSIZE - 1] != '\0') {
     fe_Object *obj = fe_cons(ctx, null, &nil);
     settype(obj, FE_TSTRING);
@@ -536,7 +568,8 @@ fe_Object* fe_symbol_impl(fe_Context *ctx, const(char)* name)
 }
 
 
-fe_Object* fe_cfunc(fe_Context *ctx, fe_CFunc fn) {
+fe_Object* fe_cfunc_impl(fe_Context *ctx, fe_CFunc fn) 
+{
   fe_Object *obj = object_(ctx);
   settype(obj, FE_TCFUNC);
   cfunc(obj) = fn;
@@ -552,7 +585,7 @@ fe_Object* fe_ptr(fe_Context *ctx, void *ptr) {
 }
 
 
-fe_Object* fe_list(fe_Context *ctx, fe_Object **objs, int n) {
+fe_Object* fe_list_impl(fe_Context *ctx, fe_Object **objs, int n) {
   fe_Object *res = &nil;
   while (n--) {
     res = fe_cons(ctx, objs[n], res);
@@ -561,15 +594,17 @@ fe_Object* fe_list(fe_Context *ctx, fe_Object **objs, int n) {
 }
 
 
-fe_Object* fe_car(fe_Context *ctx, fe_Object *obj) {
-  if (isnil(obj)) { return obj; }
-  return car(checktype(ctx, obj, FE_TPAIR));
+fe_Object* fe_car_impl(fe_Context *ctx, fe_Object *obj) 
+{
+    if (isnil(obj)) { return obj; }
+    return car(checktype(ctx, obj, FE_TPAIR));
 }
 
 
-fe_Object* fe_cdr(fe_Context *ctx, fe_Object *obj) {
-  if (isnil(obj)) { return obj; }
-  return cdr(checktype(ctx, obj, FE_TPAIR));
+fe_Object* fe_cdr_impl(fe_Context *ctx, fe_Object *obj) 
+{
+    if (isnil(obj)) { return obj; }
+    return cdr(checktype(ctx, obj, FE_TPAIR));
 }
 
 
@@ -653,13 +688,14 @@ void writebuf(fe_Context *ctx, void *udata, char chr)
     if (x.n) { *x.p++ = chr; x.n--; }
 }
 
-int fe_tostring(fe_Context *ctx, fe_Object *obj, char *dst, int size) {
-  CharPtrInt x;
-  x.p = dst;
-  x.n = size - 1;
-  fe_write(ctx, obj, &writebuf, &x, 0);
-  *x.p = '\0';
-  return size - x.n - 1;
+int fe_tostring_impl(fe_Context *ctx, fe_Object *obj, char *dst, int size) 
+{
+    CharPtrInt x;
+    x.p = dst;
+    x.n = size - 1;
+    fe_write(ctx, obj, &writebuf, &x, 0);
+    *x.p = '\0';
+    return size - x.n - 1;
 }
 
 void* fe_toptr(fe_Context *ctx, fe_Object *obj) {
@@ -675,11 +711,6 @@ static fe_Object* getbound(fe_Object *sym, fe_Object *env) {
   }
   /* return global */
   return cdr(sym);
-}
-
-
-void fe_set(fe_Context *ctx, fe_Object *sym, fe_Object *v) {
-  cdr(getbound(sym, &nil)) = v;
 }
 
 
@@ -1057,7 +1088,7 @@ fe_Object* fe_eval_impl(fe_Context *ctx, fe_Object *obj)
     return eval(ctx, obj, &nil, null);
 }
 
-fe_Context* fe_open_impl(void *ptr, int size) 
+fe_Context* fe_open_impl(void *ptr, int size, void* udata = null) 
 {
     int i, save;
     fe_Context *ctx;
@@ -1076,6 +1107,9 @@ fe_Context* fe_open_impl(void *ptr, int size)
     ctx.calllist = &nil;
     ctx.freelist = &nil;
     ctx.symlist = &nil;
+
+    /* init user data */
+    ctx.udata = udata;
 
     /* populate freelist */
     for (i = 0; i < ctx.object_count; i++) 
